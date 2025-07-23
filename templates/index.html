@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.0/dist/chartjs-chart-financial.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            width: 100vw;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0a0a0a;
+            color: #e0e0e0;
+            overflow: hidden;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        .app-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .top-bar {
+            height: 80px;
+            background: linear-gradient(90deg, #1a1a1a, #2d2d2d);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 30px;
+            border-bottom: 2px solid #333;
+            flex-shrink: 0;
+        }
+
+        .app-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00cc88;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 12px;
+        }
+
+        .control-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            font-size: 12px;
+        }
+
+        .btn-start { background: #00cc88; color: #000; }
+        .btn-stop { background: #ff4444; color: #fff; }
+        .btn-reset { background: #ff8800; color: #000; }
+        .btn-reset-view { background: #0088ff; color: #fff; }
+
+        .control-btn:hover {
+            transform: scale(1.05);
+        }
+
+        .status-indicator {
+            padding: 8px 16px;
+            border-radius: 20px;
+            background: #333;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .main-workspace {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 90% 10%;
+            min-height: 0;
+        }
+
+        .chart-area {
+            background: #111;
+            border-right: 1px solid #333;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chart-header {
+            height: 50px;
+            background: #1a1a1a;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+        }
+
+        .chart-title {
+            color: #00cc88;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .chart-body {
+            flex: 1;
+            padding: 15px;
+            min-height: 0;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .orderbook-area {
+            background: #0d0d0d;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .orderbook-header {
+            height: 50px;
+            background: #1a1a1a;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+        }
+
+        .orderbook-title {
+            color: #0088ff;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .orderbook-list {
+            flex: 1;
+            padding: 10px;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
+        .order-entry {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 8px;
+            margin: 1px 0;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 11px;
+        }
+
+        .order-entry.ask {
+            background: rgba(255, 68, 68, 0.2);
+            color: #ff6666;
+        }
+
+        .order-entry.bid {
+            background: rgba(0, 204, 136, 0.2);
+            color: #00ff99;
+        }
+
+        .bottom-section {
+            height: 180px;
+            background: #0f0f0f;
+            border-top: 1px solid #333;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            flex-shrink: 0;
+        }
+
+        .info-section {
+            padding: 20px;
+            border-right: 1px solid #333;
+        }
+
+        .traders-section {
+            padding: 20px;
+        }
+
+        .section-title {
+            color: #00cc88;
+            font-weight: bold;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .market-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
+
+        .metric-box {
+            background: #1a1a1a;
+            padding: 8px;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .metric-label {
+            font-size: 10px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+
+        .metric-value {
+            font-size: 14px;
+            font-weight: bold;
+            color: #00cc88;
+            font-family: monospace;
+        }
+
+        .traders-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 8px;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+
+        .trader-box {
+            background: #1a1a1a;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #333;
+        }
+
+        .trader-name {
+            color: #0088ff;
+            font-weight: bold;
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+
+        .trader-info {
+            font-size: 10px;
+            color: #ccc;
+            font-family: monospace;
+        }
+
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #111;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="top-bar">
+            <div class="app-title">Trading Terminal</div>
+            <div class="control-buttons">
+                <button class="control-btn btn-start" onclick="startTrading()">Start</button>
+                <button class="control-btn btn-stop" onclick="stopTrading()">Stop</button>
+                <button class="control-btn btn-reset" onclick="resetMarket()">Reset</button>
+                <button class="control-btn btn-reset-view" onclick="resetChartView()">Reset View</button>
+            </div>
+            <div class="status-indicator" id="status">Ready</div>
+        </div>
+
+        <div class="main-workspace">
+            <div class="chart-area">
+                <div class="chart-header">
+                    <div class="chart-title">PRICE CHART</div>
+                </div>
+                <div class="chart-body">
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </div>
+
+            <div class="orderbook-area">
+                <div class="orderbook-header">
+                    <div class="orderbook-title">ORDER BOOK</div>
+                </div>
+                <div class="orderbook-list" id="ordersList"></div>
+            </div>
+        </div>
+
+        <div class="bottom-section">
+            <div class="info-section">
+                <div class="section-title">MARKET DATA</div>
+                <div class="market-grid">
+                    <div class="metric-box">
+                        <div class="metric-label">PRICE</div>
+                        <div class="metric-value" id="currentPrice">$0.00</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label">BID</div>
+                        <div class="metric-value" id="highestBid">$0.00</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label">ASK</div>
+                        <div class="metric-value" id="lowestAsk">$0.00</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label">SPREAD</div>
+                        <div class="metric-value" id="spread">$0.00</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="traders-section">
+                <div class="section-title">TRADERS</div>
+                <div class="traders-container" id="usersGrid"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let chart = null;
+        let config = {};
+        let ready = false;
+
+        socket.on('connect', () => {
+            setStatus('Connected', '#00cc88');
+        });
+
+        socket.on('disconnect', () => {
+            setStatus('Disconnected', '#ff4444');
+        });
+
+        fetch('/api/config')
+            .then(r => r.json())
+            .then(c => {
+                config = c;
+                setupChart();
+            })
+            .catch(e => {
+                config = {
+                    chart_settings: { bullish_color: '#00cc88', bearish_color: '#ff4444' },
+                    display_settings: { price_decimals: 2, max_orders_displayed: 20 }
+                };
+                setupChart();
+            });
+
+        function setupChart() {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'candlestick',
+                data: {
+                    datasets: [{
+                        label: 'TECH Stock',
+                        data: [],
+                        borderColor: '#e0e0e0',
+                        borderWidth: 1,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'second',
+                                displayFormats: {
+                                    second: 'HH:mm:ss'
+                                }
+                            },
+                            grid: { color: '#333' },
+                            ticks: { color: '#e0e0e0' }
+                        },
+                        y: {
+                            grid: { color: '#333' },
+                            ticks: { 
+                                color: '#e0e0e0',
+                                callback: value => '$' + value.toFixed(2)
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const o = context.raw.o;
+                                    const h = context.raw.h;
+                                    const l = context.raw.l;
+                                    const c = context.raw.c;
+                                    return `O: ${o} H: ${h} L: ${l} C: ${c}`;
+                                }
+                            }
+                        },
+                        zoom: {
+                            pan: {
+                                enabled: true,
+                                mode: 'xy', // Enable panning on both axes
+                            },
+                            zoom: {
+                                wheel: { enabled: true, mode: 'xy' }, // Enable wheel zoom on both axes
+                                pinch: { enabled: true, mode: 'xy' }, // Enable pinch zoom on both axes
+                                mode: 'xy',
+                            },
+                            limits: {
+                                // Optional: Define max zoom levels if needed
+                            },
+                        }
+                    },
+                    // Candlestick colors
+                    color: {
+                        up: config.chart_settings?.bullish_color || '#4CAF50',
+                        down: config.chart_settings?.bearish_color || '#f44336',
+                        unchanged: '#999999',
+                    }
+                }
+            });
+            ready = true;
+        }
+
+        socket.on('market_update', data => {
+            updateData(data.market_data);
+            if (data.market_data.latest_candle) {
+                updateChart(data.market_data.latest_candle);
+            } else if (data.market_data.candlestick_data) {
+                updateChart(data.market_data.candlestick_data);
+            }
+        });
+
+        socket.on('trading_status', data => {
+            if (data.status === 'started') setStatus('Trading', '#00cc88');
+            else if (data.status === 'stopped') setStatus('Stopped', '#ff4444');
+            else if (data.status === 'reset') {
+                setStatus('Reset', '#ff8800');
+                if (ready && chart) {
+                    chart.data.datasets[0].data = [];
+                    chart.update();
+                    resetChartView(); // Also reset the view state
+                }
+            }
+        });
+
+        function startTrading() { socket.emit('start_trading'); }
+        function stopTrading() { socket.emit('stop_trading'); }
+        function resetMarket() { socket.emit('reset_market'); }
+
+        function resetChartView() {
+            if (!chart) return;
+            isZoomedOrPanned = false;
+            chart.resetZoom('none');
+            // After resetting, re-apply the auto-scroll window
+            applyAutoScrollWindow();
+            chart.update('none');
+        }
+
+        function setStatus(text, color) {
+            const el = document.getElementById('status');
+            el.textContent = text;
+            el.style.backgroundColor = color;
+        }
+
+        function updateData(data) {
+            if (!data) return;
+            
+            document.getElementById('currentPrice').textContent = data.current_price ? `$${data.current_price}` : 'N/A';
+            document.getElementById('highestBid').textContent = data.highest_bid ? `$${data.highest_bid}` : 'N/A';
+            document.getElementById('lowestAsk').textContent = data.lowest_ask ? `$${data.lowest_ask}` : 'N/A';
+            document.getElementById('spread').textContent = data.spread ? `$${data.spread}` : 'N/A';
+            
+            updateOrders(data.bids, data.asks);
+            updateTraders(data.users);
+        }
+
+        let isZoomedOrPanned = false;
+
+        function updateChart(data) {
+            if (!ready || !chart) return;
+
+            // Set the flag on user interaction
+            chart.options.plugins.zoom.pan.onPanStart = () => { isZoomedOrPanned = true; return true; };
+            chart.options.plugins.zoom.zoom.onZoomStart = () => { isZoomedOrPanned = true; return true; };
+
+            const chartData = chart.data.datasets[0].data;
+
+            // Handle initial full data load (array)
+            if (Array.isArray(data)) {
+                const initialData = data.map(c => ({
+                    x: new Date(c.timestamp).getTime(),
+                    o: c.open,
+                    h: c.high,
+                    l: c.low,
+                    c: c.close
+                })).sort((a, b) => a.x - b.x);
+                
+                chart.data.datasets[0].data = initialData;
+                applyAutoScrollWindow();
+                chart.update('none');
+                return;
+            }
+
+            // Handle real-time single candle updates (object)
+            if (typeof data === 'object' && data !== null) {
+                const newCandle = {
+                    x: new Date(data.timestamp).getTime(),
+                    o: data.open,
+                    h: data.high,
+                    l: data.low,
+                    c: data.close
+                };
+
+                if (chartData.length > 0) {
+                    const lastCandle = chartData[chartData.length - 1];
+                    if (lastCandle.x === newCandle.x) {
+                        Object.assign(lastCandle, newCandle);
+                    } else if (lastCandle.x < newCandle.x) {
+                        chartData.push(newCandle);
+                    }
+                } else {
+                    chartData.push(newCandle);
+                }
+                
+                if (!isZoomedOrPanned) {
+                    applyAutoScrollWindow();
+                }
+                chart.update('none');
+            }
+        }
+
+        function applyAutoScrollWindow() {
+            if (!chart || chart.data.datasets[0].data.length === 0) return;
+            
+            const chartData = chart.data.datasets[0].data;
+            const max_candles = config.chart_settings?.max_candles || 50;
+            const lastCandleTime = chartData[chartData.length - 1].x;
+            const startIndex = Math.max(0, chartData.length - max_candles);
+            const firstVisibleTime = chartData[startIndex].x;
+
+            chart.options.scales.x.min = firstVisibleTime;
+            chart.options.scales.x.max = lastCandleTime;
+        }
+
+        function updateOrders(bids, asks) {
+            const list = document.getElementById('ordersList');
+            list.innerHTML = '';
+            
+            const max = config.display_settings?.max_orders_displayed || 20;
+            const dec = config.display_settings?.price_decimals || 2;
+            
+            asks.slice(0, max).reverse().forEach(ask => {
+                const div = document.createElement('div');
+                div.className = 'order-entry ask';
+                div.innerHTML = `<span>$${ask.price.toFixed(dec)}</span><span>${ask.quantity}</span>`;
+                list.appendChild(div);
+            });
+            
+            bids.slice(0, max).forEach(bid => {
+                const div = document.createElement('div');
+                div.className = 'order-entry bid';
+                div.innerHTML = `<span>$${bid.price.toFixed(dec)}</span><span>${bid.quantity}</span>`;
+                list.appendChild(div);
+            });
+        }
+
+        function updateTraders(users) {
+            const grid = document.getElementById('usersGrid');
+            grid.innerHTML = '';
+            
+            users.forEach(user => {
+                const div = document.createElement('div');
+                div.className = 'trader-box';
+                div.innerHTML = `
+                    <div class="trader-name">T${user.user_id}</div>
+                    <div class="trader-info">$${user.balance}</div>
+                    <div class="trader-info">${user.stock_quantity} shares</div>
+                    <div class="trader-info">$${user.total_value} total</div>
+                `;
+                grid.appendChild(div);
+            });
+        }
+
+        fetch('/api/market_data')
+            .then(r => r.json())
+            .then(data => {
+                const wait = () => {
+                    if (ready) {
+                        updateData(data.market_data);
+                        if (data.market_data?.candlestick_data) {
+                            updateChart(data.market_data.candlestick_data);
+                        }
+                    } else {
+                        setTimeout(wait, 50);
+                    }
+                };
+                wait();
+            });
+    </script>
+</body>
+</html>
